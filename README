@@ -1,0 +1,73 @@
+Transactional NP-Heap
+Overview
+In the previous project, we have built NPHeap, an in-memory kernel module that provides efficient data sharing among different processes. Although NPHeap provides some degree of parallel programming support -- through simple, traditional locking/unlocking mechanism in either a fine-grained or coarse-grained manner, depending on how you implemented it, the performance of such a lock-based mechanism can be limited once the degree of parallelism increases. 
+
+In this project, you will be investigating a potential design that supports parallel accesses among concurrent processes more efficiently. This design leverages the concept of "transactional memory". Instead of using locks, the programmer declares "atomic regions" in the transactional memory programming model. All memory accesses in the atomic region are considered as a single transaction. A transaction can commit, i.e. present its updates, to the underlying memory device only if no other transactions have changed any value the transaction depends on. If the transaction cannot commit, the transaction must be aborted and restarted.
+
+In order to check if a transaction can be committed or not, one way is to maintain a "version" number for data stored in the memory device. Whenever your program start a transaction or say, entering an atomic region, you should obtain a "transaction id" for this ongoing transaction. At the end of the transaction, if the version of all values that the transaction read remains the same as the beginning of the transaction, meaning that the results generated from the transaction are still based on valid input data, the transaction can commit all the value it modified as a new version of the data to the memory device. Otherwise, the transaction should be aborted and restart from the beginning. 
+
+This project will use the NPHeap pseudo device that you implemented in the previous project as the data storage. You will implement another kernel module to control the access to NPHeap. This kernel module is called TNPHeap. You also need to provide a user-space library that allows applications to perform transactions easily. The library should obtain a version number whenever the application needs to start a new transaction. The library also needs to buffer uncommitted data in user-space memory. Once the application requests to commit, the library needs to verify the version number of the referenced data. If the transaction is ready to commit, all buffered data can be presented in the NPHeap, otherwise, the library should just discard all buffered data and restart the transaction.
+
+You are strongly encouraged to work in a group of 2 or 3. Groups do the same project as individuals. All members will receive the same grade. Note that working in groups may or may not make the project easier, depending on how the group interactions work out. If collaboration issues arise, contact your instructor as soon as possible: flexibility in dealing with such issues decreases as the deadline approaches. 
+
+In this project, you will be given the prototype of the kernel module with a src/tnpheap_core.c file that only contains empty functions. This time, you also need to implement the user-space library that allows an application to interact with this kernel module through ioctl interfaces as well as the npheap kernel module. We provide a sample benchmark application that you may extend to test if your kernel module and library functions correctly.
+
+Objective
+
+* Learning more about parallel processes
+* Learning the concept of transactional memory
+* Learning how user-space library works together with kernel modules
+* Learning how to implement a handler
+* Learning how memory protection works
+
+How to start 
+
+To begin, you need to first form a group and setup the environment for developing your project. You should set up a machine or a VMWare virtual machine (CS students should have free license for that https://www.csc.ncsu.edu/vmap/) with clean Ubuntu 16.04 installation. You also may use the VCL service maintained by NCSU through https://vcl.ncsu.edu/ . You may reserve one virtual machine and connect to this machine remotely by selecting reservations. We will use the "Ubuntu 16.04 Base" to test your kernel module. However, the VCL service will reset once your reservation timeouts. 
+
+You also need to have a working NPHeap kernel module from the previous project. If you don't have a properly working version, you may download and use the npheap kernel module from 
+
+Finally, you may fetch the code from https://github.ncsu.edu/htseng3/CSC501_TNPHEAP.git.  After fetching the code, you will find three directories and a test script. These directories are:
+
+1. kernel_module -- the directory where we have the kernel module code.
+
+2. library -- the directory of the user-space library code.
+
+3. benchmark -- the directory with a sample program using this kernel and a validator to examine the result.
+
+You may now go to the kernel_module directory and type "make" to compile the kernel module and then "sudo make install" to install headers and the module in the right place. You should be able to find an tnpheap.ko if your compilation succeeds and this is the binary of the tnpheap kernel module. However, this kernel module isn't in your kernel yet. To get this kernel module loaded into the system kernel, try "sudo insmod tnpheap.ko". Upon success, you should find an "tnpheap" device file under /dev directory in your linux system. By default, this device may not be available for non-root users. Therefore, you need to use "sudo chmod 777 /dev/tnpheap" command to make it accessible by anyone and any process in the system. If you don't want this device to be available in the system anymore, you can use "sudo rmmod tnpheap" to remove this device.
+
+Now, you can navigate to the library path and again use "make" to generate this dynamic link library. You need to then use "sudo make install" to make this library publicly available for the system. You should read the code and figure out how this library interacts with the kernel module. 
+
+Before you go and test your applications, always make sure that npheap device is present in your system.
+
+Finally, you can now go to the benchmark directory to get the benchmark and validate programs compiled. The benchmark and validate programs have some parameters. The benchmark program generates random values and write them to npheap. The validate program gets values from npheap and validates if they are consistent with what we are supposed to write. You may go into the benchmark.c or validate.c to understand the meaning of them. You should also use and read "test.sh" file to see how the whole framework work together. 
+
+No matter you're using VMWare, real machine, or VCL, you should always use https://github.ncsu.edu to control/maintain/backup your work.
+
+Your tasks
+
+1. Implementing the tnpheap kernel module: the tnpheap kernel_module needs to implement the following features:
+
+- tnpheap_start_tx: This function indicates the beginning of a new transaction and returns a transaction number to the requesting process.
+
+- tnpheap_get_version: This function should return the version number of the object identified by the offset in npheap
+
+- tnpheap_commit:  This function should update the version number of the object if a new version of the object is committed.
+
+2. Implement the user-space library -- you need to complete at least the following functions
+
+- tnpheap_get_version: reports the current version of a specific object for the user program
+
+- handler: a memory access exception handler that you should define whenever a SIGSEGV (segmentation fault) exception occurs
+
+- tnpheap_alloc: a function that allocates/mmaps an object from NPHeap to user-space address. You might need to consider creating a buffer for uncommitted data when this function is called.
+
+- tnpheap_start_tx: This function should work with the TNPHeap kernel module to start a transaction.
+
+- tnpheap_commit: This function should return a 0 when the transaction commits successfully. It should return 1 if the transaction is aborted. You might want to check if the transaction can commit and perform the atomic commit operation in this function.
+
+3. Test the developed module: It's your responsibility to test the developed kernel module thoroughly. Our benchmark is just a starting point of your testing. The TA/grader will generate a different test sequence to test your program when grading. Your module must be able to support thousands of records. You may assume all objects are smaller than 8K.
+
+Turn ins
+
+You only need to (or say you can only) turn in the tnpheap_core.c file in the kernel_module/src directory and the tnpheap.c file in the library directory. All your modifications should be limited within these two files. Exactly 1 member of each group should submit the source code. All group members' names and Unity IDs should be easily found in a comment at the beginning of the code.
