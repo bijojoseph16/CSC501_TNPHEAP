@@ -1,0 +1,4 @@
+TARGET = tnpheap
+obj-m := tnpheap.o
+tnpheap-objs := src/tnpheap_core.o
+ccflags-y := -I$(src)/include 
