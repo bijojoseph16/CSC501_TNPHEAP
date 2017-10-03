@@ -3,82 +3,129 @@
 #include <sys/syscall.h>
 #include <time.h>
 #include <npheap.h>
+#include <tnpheap.h>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
 #include <sys/time.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <malloc.h>
+
+struct data_array_element
+{
+    int size;
+    char *data;
+};
 
 int main(int argc, char *argv[])
 {
-    int i=0,number_of_processes = 1, number_of_objects=1024, max_size_of_objects = 8192 ,j; 
+    int i=0,number_of_processes=1, number_of_objects=1024, max_object_size = 65536,j; 
     int a;
     int pid;
     int size;
+    __u64 prev_tx =0;
     char data[8192];
     char filename[256];
     char *mapped_data;
-    int devfd;
+    struct data_array_element *data_array;
+    int npheap_dev, tnpheap_dev;
+    int object_id;
     unsigned long long msec_time;
     FILE *fp;
     struct timeval current_time;
+
     if(argc < 3)
     {
-        fprintf(stderr, "Usage: %s number_of_objects max_size_of_objects number_of_processes\n",argv[0]);
+        fprintf(stderr, "Usage: %s number_of_objects max_object_size number_of_processes\n",argv[0]);
         exit(1);
     }
     number_of_objects = atoi(argv[1]);
-    max_size_of_objects = atoi(argv[2]);
+    max_object_size = atoi(argv[2]);
     number_of_processes = atoi(argv[3]);
-    devfd = open("/dev/npheap",O_RDWR);
-    if(devfd < 0)
+    tnpheap_init();
+    npheap_dev = open("/dev/npheap",O_RDWR);
+    tnpheap_dev = open("/dev/tnpheap",O_RDWR);
+    if(tnpheap_dev < 0 || npheap_dev < 0)
     {
         fprintf(stderr, "Device open failed");
         exit(1);
     }
-    srand((int)time(NULL)+(int)getpid());
     // Writing to objects
-    for(i=0;i<(number_of_processes-1) && pid != 0;i++)
-    {
+    i=0;
+    do{
         pid=fork();
+        i++;
     }
-    sprintf(filename,"npheap.%d.log",(int)getpid());
-    fp = fopen(filename,"w");
+    while(i<(number_of_processes-1) && pid != 0);
+// Generate input data 
+    srand((int)time(NULL)+(int)getpid());
+    data_array = (struct data_array_element *)calloc(number_of_objects*2, sizeof(struct data_array_element));
     for(i = 0; i < number_of_objects; i++)
     {
-        npheap_lock(devfd,i);
-        size = npheap_getsize(devfd,i);
-        while(size ==0 || size <= 10)
+        object_id = rand()%(number_of_objects*2);
+        while(size == 0 || size <= 10)
         {
-            size = rand() % max_size_of_objects;
+            size = rand()%(max_object_size);
         }
-        mapped_data = (char *)npheap_alloc(devfd,i,size);
-        if(!mapped_data)
+        if(data_array[object_id].size)
+            free(data_array[object_id].data);
+        data_array[object_id].data = (char *)calloc(size,sizeof(char));
+        data_array[object_id].size = size;
+        a = rand() + 1;
+        for(j = 0; j < size-11; j=strlen(data_array[object_id].data))
         {
-            fprintf(stderr,"Failed in npheap_alloc()\n");
-            exit(1);
+            sprintf(data_array[object_id].data,"%s%d",data_array[object_id].data,a);
         }
-//        memset(mapped_data, 0, 4096);
-        a = rand()+1;
-        gettimeofday(&current_time, NULL);
-        for(j = 0; j < size-10; j=strlen(mapped_data))
-        {
-            sprintf(mapped_data,"%s%d",mapped_data,a);
-        }
-        fprintf(fp,"S\t%d\t%ld\t%d\t%lu\t%s\n",pid,current_time.tv_sec * 1000000 + current_time.tv_usec,i,strlen(mapped_data),mapped_data);
-        npheap_unlock(devfd,i);
     }
-    
-    // try delete something
-    i = rand()%256;
-    npheap_lock(devfd,i);
-    npheap_delete(devfd,i);
-    fprintf(fp,"D\t%d\t%ld\t%d\t%lu\t%s\n",pid,current_time.tv_sec * 1000000 + current_time.tv_usec,i,strlen(mapped_data),mapped_data);
-    npheap_unlock(devfd,i);
-    close(devfd);
+
+    START_TX(npheap_dev, tnpheap_dev);
+    for(i = 0; i < number_of_objects*2; i++)
+    {
+        if(data_array[i].size)
+        {
+            size = data_array[i].size;
+            mapped_data = (char *)tnpheap_alloc(npheap_dev,tnpheap_dev,i,size);
+            if(!mapped_data)
+            {
+                fprintf(stderr,"Failed in npheap_alloc()\n");
+                exit(1);
+            }
+            memset(mapped_data, 0, data_array[i].size);
+            memcpy(mapped_data, data_array[i].data, data_array[i].size);
+        }
+    }
+    COMMIT(npheap_dev, tnpheap_dev);
+    // print commit log
+    pid=(int)getpid();
+    sprintf(filename,"tnpheap.%d.log",pid);
+    fp = fopen(filename,"w");
+    for(i = 0; i < number_of_objects*2; i++)
+    {
+        if(data_array[i].size)
+        {
+            size = npheap_getsize(npheap_dev,i);
+            mapped_data = (char *)tnpheap_alloc(npheap_dev,tnpheap_dev,i,size);
+            if(!mapped_data)
+            {
+                fprintf(stderr,"Failed in npheap_alloc()\n");
+                exit(1);
+            }
+            memset(mapped_data, 0, data_array[i].size);
+            memcpy(mapped_data, data_array[i].data, data_array[i].size);
+            fprintf(fp,"S\t%d\t%llu\t%d\t%lu\t%s\n",pid,current_tx,i,strlen(data_array[i].data),data_array[i].data);
+        }
+    }
+
+    close(npheap_dev);
+    close(tnpheap_dev);
+    fclose(fp);
     if(pid != 0)
-        wait(NULL);
+    {
+        for(i=0;i<number_of_processes;i++)
+            wait(NULL);
+    }
+    exit(0);
     return 0;
 }
 
