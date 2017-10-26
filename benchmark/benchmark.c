@@ -96,6 +96,9 @@ int main(int argc, char *argv[])
         }
     }
     COMMIT(npheap_dev, tnpheap_dev);
+    gettimeofday(&current_time,NULL);
+    msec_time = current_time.tv_usec + current_time.tv_sec*10^6;
+
     // print commit log
     pid=(int)getpid();
     sprintf(filename,"tnpheap.%d.log",pid);
@@ -113,7 +116,7 @@ int main(int argc, char *argv[])
             }
 //            memset(mapped_data, 0, data_array[i].size);
 //            memcpy(mapped_data, data_array[i].data, data_array[i].size);
-            fprintf(fp,"S\t%d\t%llu\t%d\t%lu\t%s\n",pid,current_tx,i,strlen(data_array[i].data),data_array[i].data);
+            fprintf(fp,"S\t%d\t%llu\t%d\t%lu\t%s\n",pid,msec_time,i,strlen(data_array[i].data),data_array[i].data);
         }
     }
 
