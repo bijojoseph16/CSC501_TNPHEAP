@@ -111,8 +111,8 @@ int main(int argc, char *argv[])
                 fprintf(stderr,"Failed in npheap_alloc()\n");
                 exit(1);
             }
-            memset(mapped_data, 0, data_array[i].size);
-            memcpy(mapped_data, data_array[i].data, data_array[i].size);
+//            memset(mapped_data, 0, data_array[i].size);
+//            memcpy(mapped_data, data_array[i].data, data_array[i].size);
             fprintf(fp,"S\t%d\t%llu\t%d\t%lu\t%s\n",pid,current_tx,i,strlen(data_array[i].data),data_array[i].data);
         }
     }
