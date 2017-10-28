@@ -25,8 +25,8 @@ int main(int argc, char *argv[])
         exit(1);
     }
     number_of_objects = atoi(argv[1]);
-    obj = (char **)malloc(number_of_objects*sizeof(char *));
-    for(i = 0; i < number_of_objects; i++)
+    obj = (char **)malloc(number_of_objects*sizeof(char *)*2);
+    for(i = 0; i < number_of_objects*2; i++)
     {
         obj[i] = (char *)calloc(8192, sizeof(char));
     }
