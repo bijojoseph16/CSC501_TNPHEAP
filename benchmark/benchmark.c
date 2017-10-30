@@ -97,7 +97,7 @@ int main(int argc, char *argv[])
     }
     COMMIT(npheap_dev, tnpheap_dev);
     gettimeofday(&current_time,NULL);
-    msec_time = current_time.tv_usec + current_time.tv_sec*10^6;
+    msec_time = current_time.tv_usec + current_time.tv_sec*1000000;
 
     // print commit log
     pid=(int)getpid();
