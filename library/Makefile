@@ -8,7 +8,7 @@ all: tnpheap.c
 install: libtnpheap.so.1.0
 	cp libtnpheap.so.1.0 /usr/lib/libtnpheap.so.1
 	ln -fs /usr/lib/libtnpheap.so.1 /usr/lib/libtnpheap.so
-	cp npheap.h  /usr/local/include
+	#cp npheap.h  /usr/local/include
 	cp include/tnpheap.h  /usr/local/include
 
 

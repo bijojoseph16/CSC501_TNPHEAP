@@ -44,16 +44,42 @@
 #include <linux/mutex.h>
 #include <linux/time.h>
 
+//my changes
+#include <linux/radix-tree.h>
+
+//tree for the version numbers
+RADIX_TREE(version_numbers, GFP_ATOMIC);
+
+//keeps track of the transaction number
+//don't worry about overflow, and don't check which transactions are still out there
+__u64 tx_number = 0;
+
+//mutex to protect incrementing the version numbers in the tree
+DEFINE_MUTEX(version_numbers_mutex);
+
+//mutex to protect the transaction number
+DEFINE_MUTEX(tx_number_mutex);
+
 struct miscdevice tnpheap_dev;
 
 __u64 tnpheap_get_version(struct tnpheap_cmd __user *user_cmd)
 {
     struct tnpheap_cmd cmd;
+    __u64 offset;
+    __u64 * version_number_p;
     if (copy_from_user(&cmd, user_cmd, sizeof(cmd)))
     {
         return -1 ;
-    }    
-    return 0;
+    } 
+    //get the required offset
+    offset = cmd.offset;
+    //search the tree for it, assuming for now that offset is the actual offset, 
+    //and not the offset * the page size
+    version_number_p = (__u64 *)radix_tree_lookup(&version_numbers, offset);
+    if (version_number_p == NULL) {
+        return 0;//0 stands for never before seen offset
+    }
+    return *version_number_p;
 }
 
 __u64 tnpheap_start_tx(struct tnpheap_cmd __user *user_cmd)
@@ -64,22 +90,40 @@ __u64 tnpheap_start_tx(struct tnpheap_cmd __user *user_cmd)
     {
         return -1 ;
     }    
+    mutex_lock(&tx_number_mutex);
+    ret = tx_number+1;
+    tx_number++;
+    mutex_unlock(&tx_number_mutex);
     return ret;
 }
 
+//return 1 when abort, 0 for success
+//still maybe(?) need to add code for mapping the memory and allocating it using npheap
 __u64 tnpheap_commit(struct tnpheap_cmd __user *user_cmd)
 {
     struct tnpheap_cmd cmd;
+    __u64 * version_number;
     __u64 ret=0;
     if (copy_from_user(&cmd, user_cmd, sizeof(cmd)))
     {
         return -1 ;
     }
+    //for now assuming that each transaction only contains one object
+    //lock the tree, then make sure the version number is the same
+    mutex_lock(&version_numbers_mutex);
+    version_number = (__u64 *)radix_tree_lookup(&version_numbers, cmd.offset);
+    if (version_number == NULL) {
+        version_number = (__u64 *) kmalloc(sizeof(__u64), GFP_ATOMIC);
+        *version_number = cmd.version;
+        radix_tree_insert(&version_numbers, cmd.offset, version_number);
+        ret = 0;
+    } else {
+        (*version_number) = cmd.version;
+        ret = 0;
+    }
+    mutex_unlock(&version_numbers_mutex);
     return ret;
 }
-
-
-
 __u64 tnpheap_ioctl(struct file *filp, unsigned int cmd,
                                 unsigned long arg)
 {
